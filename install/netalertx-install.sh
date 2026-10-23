@@ -105,6 +105,18 @@ SCAN_LIST=$(ip -o -4 route show scope link proto kernel |
   awk '$3 !~ /^(lo|docker|veth)/ {printf "%s'\''%s --interface=%s'\''", sep, $1, $3; sep=","}')
 [[ -z "$SCAN_LIST" ]] && SCAN_LIST="'--localnet'"
 sed -i "s|^SCAN_SUBNETS=.*|SCAN_SUBNETS=[${SCAN_LIST}]|" /opt/netalertx_data/config/app.conf
+
+# Web login (upstream default is OFF). Single password, no username; stored as SHA256.
+NAX_PASS=$(random_password 20)
+NAX_HASH=$(printf '%s' "$NAX_PASS" | sha256sum | cut -d' ' -f1)
+sed -i '/^SETPWD_enable_password=/d;/^SETPWD_password=/d' /opt/netalertx_data/config/app.conf
+printf "SETPWD_enable_password=True\nSETPWD_password='%s'\n" "$NAX_HASH" >>/opt/netalertx_data/config/app.conf
+{
+  echo "NetAlertX web login"
+  echo "URL:      http://$(hostname -I | awk '{print $1}'):20211"
+  echo "Password: ${NAX_PASS}"
+} >~/netalertx.creds
+chmod 600 ~/netalertx.creds
 chown -R www-data:www-data /opt/netalertx /opt/netalertx_data
 msg_ok "Configured NetAlertX"
 
