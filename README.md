@@ -50,7 +50,7 @@ Network discovery and new-device alerts. Upstream: <https://github.com/netalertx
 6. Create `/usr/local/bin/netalertx-prepare`, which runs as root before every service start:
    - creates `/run/netalertx/{log,api}` (tmpfs, rebuilt on each boot)
    - on first run only, copies `back/app.conf` to `/opt/netalertx_data/config/` and builds the DB from `server/db/schema/app.sql`
-7. Set `SCAN_SUBNETS` to every IPv4 subnet the LXC's NICs are on at install time
+7. Set `SCAN_SUBNETS` to every IPv4 subnet the LXC's NICs are on at install time. Turn on the web login (`SETPWD_enable_password=True`) with a random password, stored in `app.conf` as a SHA256 hash. The plain password is saved in `/root/netalertx.creds`.
 8. Create a PHP-FPM pool `/etc/php/8.4/fpm/pool.d/netalertx.conf` (socket `/run/php/netalertx.sock`, env passed through)
 9. Create the nginx site `/etc/nginx/sites-available/netalertx`: :20211, `/server/` proxied to :20212 with a same-origin check, PHP via the pool
 10. Create the systemd unit `netalertx.service` with `AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN`
@@ -78,6 +78,13 @@ Network discovery and new-device alerts. Upstream: <https://github.com/netalertx
   Then add `'10.20.0.0/24 --interface=eth1'`.
 - Whitelist the LXC's IP in the firewall's scan detection and with the MDR/SOC. arp-scan and nmap will trigger alerts.
 - Logs: `journalctl -u netalertx`, `/run/netalertx/log/app.log`
+- Login: one password, no username. Change it in Settings → Set Password, or from the CLI:
+  ```bash
+  H=$(printf '%s' 'NewPass' | sha256sum | cut -d' ' -f1)
+  sed -i "s|^SETPWD_password=.*|SETPWD_password='$H'|" /opt/netalertx_data/config/app.conf
+  ```
+  Locked out? Set `SETPWD_enable_password=False` in the same file.
+- The backend API on :20212 listens on all interfaces but requires `API_TOKEN` (Bearer). For extra hardening, allow only :20211 in the Proxmox firewall for the LXC.
 
 ---
 
