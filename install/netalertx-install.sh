@@ -55,6 +55,14 @@ cat ~/.netalertx >/opt/netalertx/.VERSION
 date +%s >/opt/netalertx/front/buildtimestamp.txt
 
 mkdir -p /etc/netalertx
+
+# Plugins call "sudo arp-scan" / "sudo nmap" by default. Like the upstream Docker image, give the
+# service a pass-through sudo: the binaries run with the unit's ambient CAP_NET_RAW/CAP_NET_ADMIN.
+# Only on the service PATH; the system sudo is untouched.
+mkdir -p /usr/local/lib/netalertx/bin
+printf '#!/bin/sh\nexec "$@"\n' >/usr/local/lib/netalertx/bin/sudo
+chmod 0755 /usr/local/lib/netalertx/bin/sudo
+
 cat <<'EOF' >/etc/netalertx/netalertx.env
 NETALERTX_APP=/opt/netalertx
 NETALERTX_DATA=/opt/netalertx_data
@@ -71,7 +79,7 @@ LOG_EXECUTION_QUEUE=/run/netalertx/log/execution_queue.log
 PORT=20211
 PYTHONPATH=/opt/netalertx:/opt/netalertx/server:/opt/netalertx/server/plugins
 PYTHONUNBUFFERED=1
-PATH=/opt/netalertx-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PATH=/usr/local/lib/netalertx/bin:/opt/netalertx-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EOF
 
 # Runtime dirs (tmpfs under /run) + first-run config/DB. Runs as root before every start.
@@ -109,8 +117,11 @@ sed -i "s|^SCAN_SUBNETS=.*|SCAN_SUBNETS=[${SCAN_LIST}]|" /opt/netalertx_data/con
 # Web login (upstream default is OFF). Single password, no username; stored as SHA256.
 NAX_PASS=$(random_password 20)
 NAX_HASH=$(printf '%s' "$NAX_PASS" | sha256sum | cut -d' ' -f1)
-sed -i '/^SETPWD_enable_password=/d;/^SETPWD_password=/d' /opt/netalertx_data/config/app.conf
+sed -i '/^SETPWD_enable_password=/d;/^SETPWD_password=/d;/^API_TOKEN=/d' /opt/netalertx_data/config/app.conf
 printf "SETPWD_enable_password=True\nSETPWD_password='%s'\n" "$NAX_HASH" >>/opt/netalertx_data/config/app.conf
+# Pin API_TOKEN: if absent, the backend generates a new one on every start/re-import and
+# open UI sessions (cached token) and SYNC nodes start getting "Unauthorized access attempt"
+printf "API_TOKEN='t_%s'\n" "$(random_password 20)" >>/opt/netalertx_data/config/app.conf
 {
   echo "NetAlertX web login"
   echo "URL:      http://$(hostname -I | awk '{print $1}'):20211"
